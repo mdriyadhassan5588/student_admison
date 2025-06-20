@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Student Info Search</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f3f3f3;
+      margin: 0;
+      padding: 20px;
+    }
+    .search-box input {
+      padding: 10px;
+      width: 300px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background-color: #ffe6f0;
+    }
+    .actions button {
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 0 5px;
+    }
+    .actions button.edit { color: orange; }
+    .actions button.delete { color: red; }
+    .actions button.print { color: green; }
+    .add-student input {
+      padding: 5px;
+      margin: 5px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    .add-student button {
+      padding: 8px 12px;
+      background: #e91e63;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    .top-buttons {
+      text-align: right;
+      margin-bottom: 10px;
+    }
+    .top-buttons button {
+      padding: 8px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .pagination {
+      margin-top: 15px;
+      text-align: right;
+      user-select: none;
+    }
+    .pagination button {
+      padding: 5px 10px;
+      margin: 2px;
+      background-color: white;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      cursor: pointer;
+      min-width: 35px;
+    }
+    .pagination button.active {
+      background-color: #4CAF50;
+      color: white;
+    }
+    .pagination span.dots {
+      padding: 5px 10px;
+      margin: 2px;
+      color: #666;
+      user-select: none;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<div class="top-buttons">
+  <button onclick="saveAsPDF()">Save PDF</button>
+</div>
+
+<div class="search-box">
+  <input type="text" id="searchInput" placeholder="Search by Registration Number (10 digits only)">
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th><th>Roll</th><th>Class</th><th>Section</th><th>Division</th><th>Registration No.</th><th>Action</th>
+    </tr>
+  </thead>
+  <tbody id="dataBody"></tbody>
+</table>
+
+<div class="pagination" id="pagination"></div>
+
+<div class="add-student">
+  <input type="text" id="newName" placeholder="Name">
+  <input type="text" id="newRoll" placeholder="Roll">
+  <input type="text" id="newClass" placeholder="Class">
+  <input type="text" id="newSection" placeholder="Section">
+  <input type="text" id="newDivision" placeholder="Division">
+  <input type="text" id="newReg" placeholder="Registration No.">
+  <button onclick="addStudent()">Add</button>
+</div>
+
+<script>
+let students = JSON.parse(localStorage.getItem("students")) || [];
+let currentPage = 1;
+const rowsPerPage = 5;
+let filteredStudents = students;
+
+function renderTable(data = filteredStudents) {
+  const dataBody = document.getElementById("dataBody");
+  dataBody.innerHTML = "";
+
+  const start = (currentPage - 1) * rowsPerPage;
+  const paginatedData = data.slice(start, start + rowsPerPage);
+
+  paginatedData.forEach((s, index) => {
+    const i = students.indexOf(s);
+    dataBody.innerHTML += `
+      <tr>
+        <td id="name${i}">${s.name}</td>
+        <td id="roll${i}">${s.roll}</td>
+        <td id="class${i}">${s.class}</td>
+        <td id="section${i}">${s.section}</td>
+        <td id="division${i}">${s.division}</td>
+        <td id="reg${i}">${s.reg}</td>
+        <td class="actions">
+          <button class="edit" onclick="makeEditable(${i})"><i class="fas fa-edit"></i></button>
+          <button class="delete" onclick="deleteStudent(${i})"><i class="fas fa-trash"></i></button>
+          <button class="print" onclick="printStudent(${i})"><i class="fas fa-print"></i></button>
+        </td>
+      </tr>`;
+  });
+
+  renderPagination(data);
+}
+
+function renderPagination(data) {
+  const pagination = document.getElementById("pagination");
+  pagination.innerHTML = "";
+  const totalPages = Math.ceil(data.length / rowsPerPage);
+
+  if(totalPages <= 10) {
+    for (let i = 1; i <= totalPages; i++) {
+      addPageButton(i);
+    }
+  } else {
+    addPageButton(1);
+    addPageButton(2);
+
+    let startPage = currentPage - 2;
+    let endPage = currentPage + 2;
+
+    if(startPage < 3) startPage = 3;
+    if(endPage > totalPages - 2) endPage = totalPages - 2;
+
+    if(startPage > 3) addDots();
+    for(let i = startPage; i <= endPage; i++) addPageButton(i);
+    if(endPage < totalPages - 2) addDots();
+
+    addPageButton(totalPages - 1);
+    addPageButton(totalPages);
+  }
+
+  function addPageButton(page) {
+    const btn = document.createElement("button");
+    btn.innerText = page;
+    btn.className = (page === currentPage) ? "active" : "";
+    btn.onclick = () => {
+      currentPage = page;
+      renderTable(filteredStudents);
+    };
+    pagination.appendChild(btn);
+  }
+
+  function addDots() {
+    const dots = document.createElement("span");
+    dots.innerText = "...";
+    dots.className = "dots";
+    pagination.appendChild(dots);
+  }
+}
+
+function makeEditable(index) {
+  ["name", "roll", "class", "section", "division", "reg"].forEach(field => {
+    const cell = document.getElementById(`${field}${index}`);
+    cell.contentEditable = true;
+    cell.style.backgroundColor = "#fff8dc";
+    cell.oninput = () => {
+      students[index][field] = cell.innerText.trim();
+      localStorage.setItem("students", JSON.stringify(students));
+      filteredStudents = students.filter(s => {
+        const term = document.getElementById("searchInput").value.trim();
+        if(term.length === 10) return s.reg.includes(term);
+        return true;
+      });
+    };
+  });
+}
+
+function deleteStudent(index) {
+  if (confirm("Delete this student?")) {
+    students.splice(index, 1);
+    localStorage.setItem("students", JSON.stringify(students));
+    filteredStudents = students;
+    renderTable();
+  }
+}
+
+function printStudent(index) {
+  const s = students[index];
+  const win = window.open('', '', 'width=800,height=600');
+  win.document.write(`<h2>Student Info</h2>
+    <p><strong>Name:</strong> ${s.name}</p>
+    <p><strong>Roll:</strong> ${s.roll}</p>
+    <p><strong>Class:</strong> ${s.class}</p>
+    <p><strong>Section:</strong> ${s.section}</p>
+    <p><strong>Division:</strong> ${s.division}</p>
+    <p><strong>Registration No:</strong> ${s.reg}</p>`);
+  win.document.close();
+  win.print();
+}
+
+function addStudent() {
+  const s = {
+    name: document.getElementById("newName").value,
+    roll: document.getElementById("newRoll").value,
+    class: document.getElementById("newClass").value,
+    section: document.getElementById("newSection").value,
+    division: document.getElementById("newDivision").value,
+    reg: document.getElementById("newReg").value
+  };
+
+  if(s.reg.length !== 10 || !/^\d{10}$/.test(s.reg)) {
+    alert("Registration No. must be exactly 10 digits");
+    return;
+  }
+
+  students.push(s);
+  localStorage.setItem("students", JSON.stringify(students));
+  filteredStudents = students;
+
+  document.querySelectorAll('.add-student input').forEach(i => i.value = '');
+  currentPage = Math.ceil(students.length / rowsPerPage);
+  renderTable();
+}
+
+document.getElementById("searchInput").addEventListener("input", function () {
+  const term = this.value.trim();
+  if(term.length === 10 && /^\d{10}$/.test(term)) {
+    filteredStudents = students.filter(s => s.reg.includes(term));
+  } else if(term.length === 0) {
+    filteredStudents = students;
+  } else {
+    filteredStudents = [];
+  }
+  currentPage = 1;
+  renderTable(filteredStudents);
+});
+
+function saveAsPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.text("M.R.H ONLINE E-FORM REGISTRATION AUTHORITY", doc.internal.pageSize.getWidth() / 2, 15, { align: "center" });
+
+  const headers = [["Name", "Roll", "Class", "Section", "Division", "Registration No."]];
+  const data = filteredStudents.map(s => [s.name, s.roll, s.class, s.section, s.division, s.reg]);
+
+  doc.autoTable({
+    head: headers,
+    body: data,
+    startY: 25,
+    theme: 'grid',
+    styles: { fontSize: 12, halign: 'center' }
+  });
+
+  doc.save("student-data.pdf");
+}
+
+renderTable();
+</script>
+</body>
+</html>
